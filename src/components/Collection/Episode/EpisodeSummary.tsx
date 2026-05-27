@@ -10,11 +10,14 @@ import {
   mdiLoading,
 } from '@mdi/js';
 import { Icon } from '@mdi/react';
+import { isAxiosError } from 'axios';
 import cx from 'classnames';
 import { useToggle } from 'usehooks-ts';
 
 import BackgroundImagePlaceholderDiv from '@/components/BackgroundImagePlaceholderDiv';
 import Button from '@/components/Input/Button';
+import toast from '@/components/Toast';
+import { axios } from '@/core/axios';
 import { useHideEpisodeMutation, useWatchEpisodeMutation } from '@/core/react-query/episode/mutations';
 import { useEpisodeFilesQuery } from '@/core/react-query/episode/queries';
 import useEpisodeThumbnail from '@/hooks/useEpisodeThumbnail';
@@ -39,6 +42,25 @@ const StateIcon = ({ className, icon, show }: { icon: string, show: boolean, cla
   show ? <Icon path={icon} className={className} size={1.2} /> : null
 );
 
+const getMpvErrorMessage = (errorCode?: string) => {
+  switch (errorCode) {
+    case 'file_not_found':
+      return 'File was not found.';
+    case 'file_outside_library':
+      return 'File is outside the library.';
+    case 'invalid_file_type':
+      return 'This file type cannot be played with mpv.';
+    case 'local_only':
+      return 'mpv playback is only available from the local WebUI.';
+    case 'mpv_not_found':
+      return 'mpv.exe was not found.';
+    case 'unauthorized':
+      return 'You are not authorized to play this file.';
+    default:
+      return errorCode;
+  }
+};
+
 const StateButton = React.memo((
   { active, disabled, icon, onClick, tooltip }: {
     icon: string;
@@ -47,21 +69,33 @@ const StateButton = React.memo((
     tooltip: string;
     disabled: boolean;
   },
-) => (
-  <Button
-    className={cx('self-center', active ? 'text-panel-text-important' : 'text-panel-text')}
-    onClick={onClick}
-    tooltip={tooltip}
-    disabled={disabled}
-  >
-    <Icon path={icon} size={1.2} />
-  </Button>
-));
+) => {
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    onClick();
+  };
+
+  return (
+    <Button
+      className={cx('self-center', active ? 'text-panel-text-important' : 'text-panel-text')}
+      onClick={handleClick}
+      tooltip={tooltip}
+      disabled={disabled}
+    >
+      <Icon path={icon} size={1.2} />
+    </Button>
+  );
+});
 
 const SelectedStateButton = React.memo((
   { onClick, selected, shadow, show }: { selected?: boolean, show?: boolean, shadow?: boolean, onClick?: () => void },
-) => (
-  show
+) => {
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    onClick?.();
+  };
+
+  return show
     ? (
       <div
         className={cx(
@@ -70,7 +104,7 @@ const SelectedStateButton = React.memo((
         )}
       >
         <Button
-          onClick={onClick ?? (() => {})}
+          onClick={handleClick}
           className="text-panel-text"
           tooltip={selected ? 'Unselect' : 'Select'}
         >
@@ -82,14 +116,15 @@ const SelectedStateButton = React.memo((
         </Button>
       </div>
     )
-    : null
-));
+    : null;
+});
 
 const EpisodeSummary = React.memo(
   ({ anidbSeriesId, episode, nextUp, onSelectionChange, page, selected, seriesId }: Props) => {
     const { backdrop } = useOutletContext<SeriesContextType>();
     const thumbnail = useEpisodeThumbnail(episode, backdrop);
     const [open, toggleOpen] = useToggle(false);
+    const [playPending, setPlayPending] = React.useState(false);
     const episodeId = episode.IDs.ID ?? 0;
 
     const episodeFilesQuery = useEpisodeFilesQuery(
@@ -105,12 +140,49 @@ const EpisodeSummary = React.memo(
     const handleMarkHidden = () =>
       markHidden({ episodeId, hidden: markHiddenPending ? episode.IsHidden : !episode.IsHidden });
 
+    const handlePlayWithMpv = async () => {
+      if (playPending) return;
+
+      if (episode.Size <= 0) {
+        toast.error('No local file found for this episode.');
+        return;
+      }
+
+      setPlayPending(true);
+
+      try {
+        const filesResult = await episodeFilesQuery.refetch();
+        const files = filesResult.data ?? [];
+        const file = files.find(item => !item.IsVariation) ?? files[0];
+
+        if (!file?.ID) {
+          toast.error('No playable local file found for this episode.');
+          return;
+        }
+
+        const response = await axios.post(`File/${file.ID}/play-mpv`) as unknown;
+        toast.success(response === 'mpv.exe started.' ? response : 'mpv playback started.');
+      } catch (error) {
+        const responseData = isAxiosError<unknown>(error) ? error.response?.data : undefined;
+        const errorCode = typeof responseData === 'string' ? responseData : undefined;
+
+        toast.error('Failed to start mpv.', getMpvErrorMessage(errorCode));
+      } finally {
+        setPlayPending(false);
+      }
+    };
+
+    const handleImageClick = () => {
+      handlePlayWithMpv().catch(console.error);
+    };
+
     return (
       <>
         <div className={cx('z-10 flex items-center gap-x-6', !nextUp && 'p-6')}>
           <BackgroundImagePlaceholderDiv
             image={thumbnail}
             className="group flex h-65 min-w-115 rounded-lg border border-panel-border"
+            onClick={handleImageClick}
             zoomOnHover
           >
             <div className="absolute flex w-full flex-row justify-between rounded-lg transition-opacity group-hover:opacity-0">

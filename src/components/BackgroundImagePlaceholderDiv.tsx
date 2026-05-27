@@ -14,6 +14,7 @@ type Props = {
   image?: ImageType;
   hidePlaceholderOnHover?: boolean;
   overlayOnHover?: boolean;
+  onClick?: React.MouseEventHandler<HTMLDivElement>;
   zoomOnHover?: boolean;
   linkToImage?: boolean;
   inCollection?: boolean;
@@ -28,6 +29,7 @@ const BackgroundImagePlaceholderDiv = React.memo((props: Props) => {
     image,
     inCollection,
     linkToImage,
+    onClick,
     overlayOnHover,
     zoomOnHover,
   } = props;
@@ -84,7 +86,7 @@ const BackgroundImagePlaceholderDiv = React.memo((props: Props) => {
   }, [imageSource, inCollection]);
 
   return (
-    <div className={cx(className, 'relative overflow-hidden')}>
+    <div className={cx(className, 'relative overflow-hidden', onClick && 'cursor-pointer')} onClick={onClick}>
       <div
         className={cx(
           'absolute top-0 left-0 z-[-1] flex size-full flex-col rounded-lg text-center',

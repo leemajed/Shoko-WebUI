@@ -30,6 +30,10 @@ const FileInfo = ({ compact, file }: { compact?: boolean, file: FileType }) => {
             {mediaInfo.Name}
           </div>
           <div className="flex">
+            <div className="min-w-37.5 font-semibold">File ID</div>
+            {file.ID}
+          </div>
+          <div className="flex">
             <div className="min-w-37.5 font-semibold">Location</div>
             {mediaInfo.Location}
           </div>
